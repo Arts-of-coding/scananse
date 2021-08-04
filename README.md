@@ -90,19 +90,6 @@ nice -30 snaptools snap-add-bmat \
     --bin-size-list 1000 5000 10000 \
     --verbose=True
 ```
-# Making bigwig tracks (see R file)
-Excluding nonsense chromosomes which give errors when compared to the reference genome file
-```console
-grep -Ev 'GL000|KI|chrM' $bdg_file > $ bdg_file2
-```
-Removing unwanted characters from the bed files
-```console
-nice -30 sed -i ' s/b//g' $bdg_file2 && sed -i " s/[']//g" $bdg_file2
-```
-Generating the tracks in a bigwig environment
-```console
-for bdg_file in *bdg; do LC_COLLATE=C sort -k1,1 -k2,2n $bdg_file > conversion_file.bdg ; bedGraphToBigWig conversion_file.bdg /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/cellrangeratac/hg38.chrom.sizes $(basename -s .bdg $bdg_file).bw; rm conversion_file.bdg; done
-```
 
 # Adding pmat to snap (nessessary for plotting the differentially accessible regions within snapATAC):
 ```console
@@ -137,7 +124,23 @@ for bam in *.bam \
 do \
 nice -30 macs2 callpeak -t $bam --name $bam --nomodel --shift 100 --ext 200 --qval 5e-2 -B --SPMR
 ```
-Exclude unwanted chromosomes in bash/
+
+# Making bigwig tracks (see R file)
+It is possible to also make bigwig tracks from the output of MACS2. Excluding nonsense chromosomes which give errors when compared to the reference genome file.
+```console
+grep -Ev 'GL000|KI|chrM' $bdg_file > $ bdg_file2
+```
+Removing unwanted characters from the bed files
+```console
+nice -30 sed -i ' s/b//g' $bdg_file2 && sed -i " s/[']//g" $bdg_file2
+```
+Generating the tracks in a bigwig environment
+```console
+for bdg_file in *bdg; do LC_COLLATE=C sort -k1,1 -k2,2n $bdg_file > conversion_file.bdg ; bedGraphToBigWig conversion_file.bdg /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/cellrangeratac/hg38.chrom.sizes $(basename -s .bdg $bdg_file).bw; rm conversion_file.bdg; done
+```
+
+# Preprocessing the .narrowPeak files for the combine peaks script in Jupyter notebook.
+Exclude unwanted chromosomes in bash.
 ```console
 grep -Ev 'GL000|KI|chrM' *.narrowPeak
 ```
