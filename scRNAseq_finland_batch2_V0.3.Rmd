@@ -1,0 +1,1015 @@
+---
+title: "SORT-seq dataset with velocity preparations"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+## *Setting Parameters:* 
+Make sure all the metadata is available in the smples.tsv files from s2s, those columns will be loaded into the cellseq object
+```{r}
+## Parameters for processing dataset and metadata ##
+#barcode_file = "/scratch/snabel/scrna/barcode_384.tab"
+barcode_file = '/ceph/rimlsfnwi/data/moldevbio/zhou/jsmits/scRNAseq_iPSC_iLSCs/genomes/spike_in/barcode_384.tab'
+barcode_file_2 = "/ceph/rimlsfnwi/data/moldevbio/zhou/jsmits/scRNAseq/barcode_2_well.tab"
+#MT_genes_file = "/scratch/snabel/scrna/genomes/genome_addons/MT_genes.txt"
+MT_genes_file = '/ceph/rimlsfnwi/data/moldevbio/zhou/jsmits/scRNAseq_iPSC_iLSCs/genomes/spike_in/MT_genes.txt'
+s2s_results = "/ceph/rimlsfnwi/data/moldevbio/zhou/jsmits/scRNAseq_iPSC_iLSCs/results"
+s2s_sample_file = "/ceph/rimlsfnwi/data/moldevbio/zhou/jsmits/scRNAseq_iPSC_iLSCs/samples.tsv"
+
+#read s2s sample file:
+sample_info <- read.table(s2s_sample_file, header = TRUE, sep = '\t',comment.char = "#")
+
+lab_col = 'cell_type'
+
+#subset data
+subset_id <- 'cell_type'
+#filtering = c('ESC','d11_iLSC','d24_iLSC', 'LSC1','LSC2')
+explore_violin <- c("ABCG2","TP63","LGR5","ABCB5","BMI1","FZD7","CEBPD","CD200","CD109","POU5F1","PAX6","KRT3","KRT12","KRT14","KRT15","MKI67","CDKN1B")
+marker_gene_file <- '/ceph/rimlsfnwi/data/moldevbio/zhou/jsmits/scRNAseq_iPSC_iLSCs/LSC_Marker_Genes.csv'
+
+## Filtering of the dataset ##
+# Settings for genes
+gene_tresh = 1
+amount_cells_expr = 1
+# Settings for cells
+total_counts_tresh = 2000
+total_feat_tresh = 1000
+ERCC_pct_max <- 20
+mt_pct_max <- 40
+
+## Seurat Normalization, HVG selection (vst) & Scaling (and Regression) ##
+nHVG = 2000
+# Regression performed on the following variables:
+vars_to_regress = c("nCount_sf", "nFeature_sf",'pct_counts_MT') # If no regression desired: NULL
+vars_cell_cycle = c("S.Score","G2M.Score")
+
+## Dimensionality reduction ##
+# For PCA to run on
+pcs_max = 70 
+
+## Storing results ##
+workdir <- "/ceph/rimlsfnwi/data/moldevbio/zhou/jsmits/scRNAseq_iPSC_iLSCs/analysis/"
+# if regression is performed: this will already be included in the folder name
+result_descript = "_results_PreprocessingDataset_complete_clean"
+
+## Location of scripts ##
+source("/ceph/rimlsfnwi/data/moldevbio/zhou/jsmits/tools/scripts/qc_ercc_384plot.R")
+source("/ceph/rimlsfnwi/data/moldevbio/zhou/jsmits/tools/scripts/qc_umis_384plot.R")
+source("/ceph/rimlsfnwi/data/moldevbio/zhou/jsmits/tools/scripts/read_kb_dataset_s2s.R")
+
+dateoftoday <- gsub("-", "", as.character(Sys.Date()))
+resultsdir <- paste0(workdir, dateoftoday)
+system(paste("mkdir -p ", resultsdir))
+knitr::opts_knit$set(root.dir = normalizePath(resultsdir))
+knitr::opts_knit$set(root.dir = normalizePath(workdir))
+
+#knitr::opts_knit$set(root.dir = "/ceph/rimlsfnwi/data/moldevbio/zhou/jsmits/scRNAseq_iPSC_iLSCs/analysis")
+
+#run first time (no good anaconda packages, sadly):
+#BiocManager::install("DO.db", force = TRUE)#update none
+#BiocManager::install("R.utils", force = TRUE)#update none
+#remotes::install_github('satijalab/seurat-wrappers') #update none
+
+
+# Loading the important repositories # 
+require("devtools")
+library('ggplot2')
+library('plyr')
+library('dplyr')
+library('tidyr')
+library('mvoutlier')
+library('limma')
+library('knitr')
+library('SingleCellExperiment')
+
+library("scater")
+library("Seurat")
+library("scran")
+library("RColorBrewer")
+library("plot3D")
+library("stringr")
+library("SAVER")
+library("parallel")
+library('progeny')
+library("ComplexHeatmap") 
+library("org.Hs.eg.db")
+library("clusterProfiler") 
+library("ggpubr")
+library("circlize")
+library("cowplot")
+library('clustree')
+library('tidyverse')
+
+library('monocle')
+library('SeuratWrappers')
+
+
+```
+
+### Creating the SingleCellExperiment object
+The counts table is loaded along with the metadata of the cells within an Scater usable object. Scater will be used to look into the quality of the data and to help with filtering out bad cells or genes.
+```{r loading dataset, echo = TRUE, warning = FALSE}
+## Splice seperated dataset:
+spliced.data.df = read_kb_counts(paste(s2s_results,"/kallistobus/", sep = ""), "spliced", barcode_file = barcode_file)
+unspliced.data.df = read_kb_counts(paste(s2s_results,"/kallistobus/", sep = ""), "unspliced", barcode_file = barcode_file)
+```
+
+
+#calculate spliced/unspliced percentage
+```{r}
+# Percentage of reads unspliced
+print(paste0('percentage unspliced reads = ', (sum(unspliced.data.df)/(sum(spliced.data.df)+sum(unspliced.data.df))
+)*100))
+all_cells <- intersect(colnames(spliced.data.df),colnames(unspliced.data.df))
+unspliced.data.df <- unspliced.data.df[,all_cells]
+spliced.data.df <- spliced.data.df[,all_cells]
+#identical(colnames(spliced.data.df),colnames(unspliced.data.df))
+
+# The default data.df will be the spliced dataset (shorter to type)
+data.df <- spliced.data.df
+```
+#load sample metadata from the seq2science file, find in which well each fastq file was located
+```{r phenotable}
+## Setting up the phenotable ##
+phenodata <- data.frame(row.names=colnames(data.df))
+phenodata$names <- row.names(phenodata)
+
+#add well ID as metadata, get the well info from the last _* regex from each column name
+well_id <- function(x){
+  x <- str_split(x, '_')
+  n_sub_strings <- length(x[[1]])
+  x <- x[[1]][n_sub_strings]
+}
+phenodata$well <- sapply(phenodata$names, function(x) well_id(x))
+
+#generate the original sample name, by removing the well info, merge with the s2s metadata
+phenodata$name_nowell <- mapply(function(x,y)gsub(y,"",x),phenodata$names,paste('_',phenodata$well,sep=""))
+phenodata$sample <- gsub("GRCh38_ERCC_reporter_", "",phenodata$name_nowell)
+phenodata$barcode_name <- paste(phenodata$name_nowell,phenodata$well, sep = "")
+phenodata <- merge(phenodata,sample_info, by.x = 'sample', by.y = 'sample')
+
+# Only take the entries that are matchable with the counttable entries:
+pheno_matched <- phenodata[phenodata$names %in% colnames(data.df),]
+# Matching phenodata with the dataset ordering
+pheno_ordered <- pheno_matched[match(colnames(data.df),pheno_matched$names),]
+identical(pheno_ordered$names, colnames(spliced.data.df))
+write.csv(phenodata, paste0(resultsdir,"/phenodata_kbordered.csv"))
+```
+
+Subset to only use the relevant samples
+```{r}
+#pheno_ordered <- pheno_ordered[pheno_ordered[[subset_id]] %in% filtering,]
+#pheno_ordered$cell_type <- revalue(pheno_ordered$cell_type, c("ESC"="d0_iLSC"))
+#pheno_ordered
+data.df <- data.df[,colnames(data.df) %in% pheno_ordered$names]
+```
+
+## Plate Overview QC
+```{r}
+# Make a list of cell-names compatable with the excel file: plate#_A1, plate#_A2 etc.
+plate_order <- read.table(barcode_file_2, sep = "\t", col.names = c("well","barcode"))
+# Make a vector with all plate numbers
+platenrs <- unique(phenodata$name_nowell)
+pdf(paste0(resultsdir,"/1.QC_per_Plate.pdf"), paper = "USr")
+# settings for the plate diagnostics pdf 
+par(mfrow=c(2,2), mar = c(5,4,4,2) + 0.1, cex.main = 1)
+# Iterate over all plates, order cells in the order of visualization
+for (plate in platenrs){
+  # use the order of cells from te barcode file (this is A1, A2, A3, etc to P24)
+  primer_order <- paste(plate, plate_order$well, sep="")
+  # if wells are missing on the plate, these need to be added and given a value of 0
+  missing_wells <- primer_order[!primer_order %in% colnames(spliced.data.df)]
+  cols_to_add <- data.frame(matrix(ncol = length(missing_wells), nrow = length(rownames(spliced.data.df))))
+  colnames(cols_to_add) <- missing_wells
+  cols_to_add[is.na(cols_to_add)] <- 0
+  diag_plate <- cbind(spliced.data.df[,grep(plate, colnames(spliced.data.df))], cols_to_add)
+  # phenodata contains same cellid entry + rowname as used in dataset
+  cells_order <- colnames(diag_plate[,match(primer_order, colnames(diag_plate))])
+  
+  # match dataset cells order with wells in the visualization
+  tmp <- as.matrix(diag_plate[,cells_order])
+  QC_umis_384plot(tmp, paste(plate, "UMI_QC", sep = "_"))
+  QC_ERCC_384plot(tmp[grep("^ERCC", rownames(diag_plate)),], paste(plate, "ERCC_QC", sep = "_"))
+  rm(tmp)
+}
+dev.off()
+
+```
+
+
+#### Creating a SingleCellExperiment object
+```{r build SCE}
+count_matrix <- as.matrix(data.df)
+sce <- SingleCellExperiment(assays = list(counts = count_matrix), colData = pheno_ordered, rowData = rownames(count_matrix))
+MT_genes <- read.table(MT_genes_file)[,1]
+# Adding spike-in information:
+is.spike <- grepl("^ERCC", rownames(sce))
+sce <- splitAltExps(sce, ifelse(is.spike, "ERCC", "gene"))
+is.spike <- rownames(sce) %in% MT_genes
+sce <- splitAltExps(sce, ifelse(is.spike, "MT", "gene"))
+# Calculate the quality metrics:
+sce <- addPerCellQC(sce)
+
+pdf(paste0(resultsdir,'/2a.QC_counts_histograms.pdf') ,width=10,height=10,paper='special') 
+hist(sce$sum, breaks = 100)
+abline(v = total_counts_tresh, col = "red")
+# Looking at the amount of unique genes per sample
+# This is the amount with ERCC included.
+hist(sce$detected, breaks = 100)
+abline(v= total_feat_tresh, col = "red")
+dev.off()
+
+```
+
+```{r}
+nmads = 1.5
+#sce <- na.omit(sce)
+libsize.drop <- isOutlier(as.numeric(sce$sum), nmads=nmads, type="lower", log=TRUE)
+feature.drop <- isOutlier(as.numeric(sce$detected), nmads=nmads, type="both", log=TRUE)
+below_feature_thresh <- sce$detected < total_feat_tresh
+MT.drop <- isOutlier(sce$altexps_MT_percent, nmads=nmads, type="higher")
+spike.drop <- isOutlier(sce$altexps_ERCC_percent, nmads=nmads, type="higher")
+#sce$keep <- !(libsize.drop| feature.drop | spike.drop | MT.drop | below_feature_thresh)
+sce_qc <- sce[,!(libsize.drop| feature.drop | spike.drop | MT.drop | below_feature_thresh)]
+mean(table(sce_qc$sample))
+
+
+```
+
+#------------------------
+## Filtering the genes ##
+#------------------------
+
+```{r filter genes}
+#---------------------------
+
+# Create the quality-checked dataset:
+write.table("spliced_qc_counts.tsv", col.names = NA, quote = FALSE)
+#lets see how much each variable explains variability of the log gene scores
+sce_qc <- logNormCounts(sce_qc) 
+vars <- getVarianceExplained(sce_qc, 
+    variables=c("timepoint", "cell_type", "batch", "sum"))
+
+# https://www.bioconductor.org/packages/devel/bioc/vignettes/scater/inst/doc/vignette-qc.html#identifying-outliers-on-all-qc-metrics
+pdf(paste0(resultsdir,'/4.QC_genes_expressed.pdf') ,width=10,height=5,paper='special') 
+plotColData(sce_qc, x = "sum", y="detected", colour_by="timepoint") 
+plotColData(sce_qc, x = "sum", y="altexps_MT_percent", 
+    other_fields="timepoint") + facet_wrap(~timepoint)
+plotExplanatoryVariables(vars)
+# The reads consumed by the top 50 expressed genes:
+plotHighestExprs(sce_qc)
+dev.off()
+```
+
+## Build unspliced assay
+Select the same cells and genes as in the spliced dataset
+```{r build SCE 2}
+cells_use <- colnames(sce_qc)
+genes_use <- rownames(sce_qc)
+
+sce_us <- SingleCellExperiment(assays = list(counts = as.matrix(unspliced.data.df)), colData = pheno_matched, rowData = rownames(unspliced.data.df))
+# Adding spike-in information:
+is.spike <- grepl("^ERCC", rownames(sce_us))
+sce_us <- splitAltExps(sce_us, ifelse(is.spike, "ERCC", "gene"))
+is.spike <- rownames(sce_us) %in% MT_genes
+sce_us <- splitAltExps(sce_us, ifelse(is.spike, "MT", "gene"))
+# Calculate the quality metrics:
+sce_us <- addPerCellQC(sce_us)
+
+# Dataset after filtering:
+sce_usmatch <- sce_us[genes_use,cells_use]
+
+# Arbitrary thresholds:
+# Looking at the total number of RNA molecules per sample
+# UMI counts were used for this experiment
+pdf(paste(resultsdir,'2a.QC_unspliced_reads.pdf',sep="/") ,width=20,height=20,paper='special') 
+par(mfrow=c(2,2))
+hist(sce_us$sum, breaks = 100)
+hist(sce_us$detected, breaks = 100)
+hist(sce_usmatch$sum, breaks = 100)
+hist(sce_usmatch$detected, breaks = 100)
+dev.off()
+```
+
+## make a pseudobulk table:
+```{r}
+pseudobulk_df <- as.data.frame(row.names(counts(sce_qc)))
+for (sample in unique(sce_qc$sample)){
+  pseudobulk_df[[sample]] <- rowSums(counts(sce_qc)[,sce_qc$sample == sample])
+}
+row.names(pseudobulk_df) <- pseudobulk_df$`row.names(counts(sce_qc))`
+pseudobulk_df$`row.names(counts(sce_qc))` <- NULL
+write.table(pseudobulk_df, file = paste0(resultsdir,'/pseudobulk.tsv'), sep = '\t')
+```
+
+## Build Seurat object with unspliced and spliced assay
+## make a filtered and unfiltered object to show the difference between before and after filtering
+```{r create seurat object}
+metadata_2_include <- c(colnames(phenodata),"altexps_ERCC_percent","altexps_MT_percent")
+seur_obj <- CreateSeuratObject(counts = counts(sce_qc), assay = "sf", meta.data = as.data.frame(colData(sce_qc)[,colnames(colData(sce_qc)) %in% metadata_2_include]))
+#seur_obj <- CreateSeuratObject(counts = counts(sce_endo), assay = "counts", meta.data = as.data.frame(colData(sce_endo)[,colnames(colData(sce_endo)) %in% metadata_2_include]))
+
+seur_obj_all <- CreateSeuratObject(counts = counts(sce), assay = "sf", meta.data = as.data.frame(colData(sce)[,colnames(colData(sce)) %in% metadata_2_include]))
+unspliced_match <- unspliced.data.df[genes_use,cells_use]
+unspliced_match <- as.matrix(unspliced_match)
+seur_obj[["uf"]] <- CreateAssayObject(counts = unspliced_match)
+
+
+#set the timepoints in the correct order
+cluster_order <- c('d0','d11','d10','d24','mixABCG2','purABCG2','adult_LSC')
+seur_obj$timepoint <- factor(x = seur_obj$timepoint, levels = cluster_order)
+
+```
+
+## RUN SAVER on the good quality cells to improve coverage of low expressed genes
+## We will use this imputated data only for gene expression plots, not for clustering/dimensionality reduction.
+Run SAVER on the countmatrix, save the imputed counts to the 'data.saver' object within the Seurat object
+```{r message=FALSE, warning=FALSE}
+# nmads_file_loc <- '/ceph/rimlsfnwi/data/moldevbio/zhou/jsmits/scRNAseq_iPSC_iLSCs/analysis/data.saver_nmads_stringent.rds'
+# 
+# if (file.exists(nmads_file_loc)){print('SAVER file exists, loading and using it')
+#   data.saver <- readRDS(nmads_file_loc)
+# } else {print('no Saver file found, generating one')
+# data.saver <- saver(seur_obj[['sf']]@counts, ncores = 4)
+# saveRDS(data.saver, file = nmads_file_loc)
+# }
+# seur_obj[['sf_SAVER']] <- CreateAssayObject(data = data.saver$estimate, min.cells = 1, min.features = 100)
+
+```
+
+```{r}
+library(gridExtra)
+
+Idents(seur_obj) <- "sample"
+Idents(seur_obj_all) <- "sample"
+df <- as.data.frame(table(seur_obj$descriptive_name))
+colnames(df) <- c('descriptive_name', 'cells after QC')
+
+pdf(paste(resultsdir,'3.QC_depth_ERCC_MT.pdf',sep="/") ,width=20,height=12,paper='special')
+VlnPlot(object = seur_obj_all, features = ("nCount_sf"), assay = 'sf') + scale_y_continuous(limits = c(0,20000)) + ggtitle('total UMI counts all cells') 
+VlnPlot(object = seur_obj, features = c("nCount_sf"), assay = 'sf') + scale_y_continuous(limits = c(0,20000)) + ggtitle('total UMI counts filtered cells') 
+VlnPlot(object = seur_obj_all, features = c("nFeature_sf"), assay = 'sf') + scale_y_continuous(limits = c(0,5000)) + ggtitle('genes measured all cells') 
+VlnPlot(object = seur_obj, features = c("nFeature_sf"), assay = 'sf')  + scale_y_continuous(limits = c(0,5000)) + ggtitle('genes measured filtered cells') 
+VlnPlot(object = seur_obj_all, features = c("altexps_MT_percent"))+ scale_y_continuous(limits = c(0,40)) + ggtitle('% mitochondrial reads all cells') 
+VlnPlot(object = seur_obj, features = c("altexps_MT_percent"))+ scale_y_continuous(limits = c(0,40)) + ggtitle('% mitochondrial reads filtered cells') 
+
+VlnPlot(object = seur_obj_all, features = c("altexps_ERCC_percent"))+ scale_y_continuous(limits = c(0,10)) + ggtitle('% ERCC reads all cells') 
+VlnPlot(object = seur_obj, features = c("altexps_ERCC_percent"))+ scale_y_continuous(limits = c(0,10)) + ggtitle('% ERCC reads filtered cells')
+
+FeatureScatter(seur_obj_all, feature1 = "nCount_sf", feature2 = "nFeature_sf") + ggtitle('% counts vs genes measured all cells') 
+FeatureScatter(seur_obj, feature1 = "nCount_sf", feature2 = "nFeature_sf") + ggtitle('% counts vs genes measured filtered cells') 
+plot.new()
+grid.table(df)
+dev.off()
+
+```
+
+#Perform cell-cycle scoring
+```{r}
+seur_obj <- NormalizeData(
+    object = seur_obj, assay = "sf",
+    normalization.method = "LogNormalize", 
+    scale.factor = 10000
+)
+
+seur_obj <- NormalizeData(
+    object = seur_obj, assay = "uf",
+    normalization.method = "LogNormalize", 
+    scale.factor = 10000
+)
+seur_obj <- FindVariableFeatures(seur_obj, selection.method = "vst")
+seur_obj <- ScaleData(seur_obj, features = rownames(seur_obj), assay = 'sf', vars_to_regress = c('altexps_MT_percent', 'nCount_sf','nFeature_sf', 'altexps_ERCC_percent' ))
+seur_obj <- CellCycleScoring(seur_obj, s.features = cc.genes.updated.2019$s.genes, g2m.features = cc.genes.updated.2019$g2m.genes, set.ident = TRUE)
+seur_obj <- RunPCA(seur_obj, features = c(cc.genes.updated.2019$s.genes, cc.genes.updated.2019$g2m.genes))
+pdf(paste(resultsdir,'5.cell_cycle_markers.pdf',sep="/") ,width=12,height=6,paper='special')
+Idents(seur_obj) <- "Phase"
+PCAPlot(seur_obj)
+Idents(seur_obj) <- "timepoint"
+PCAPlot(seur_obj)
+
+RidgePlot(seur_obj, features = c("PCNA", "TOP2A", "MCM6", "MKI67"), assay= 'sf', ncol = 2, slot = "data")
+RidgePlot(seur_obj, features = c("S.Score", "G2M.Score"), ncol = 2, group.by = "timepoint")
+dev.off()
+```
+Vizualize the PCAs
+```{r}
+library(grid)
+library(gridExtra)
+
+seur_obj <- RunPCA(seur_obj, verbose = FALSE, npcs = 50)
+mat <- Seurat::GetAssayData(seur_obj, assay = "sf", slot = "scale.data")
+pca <- seur_obj[["pca"]]
+
+# Get the total variance:
+total_variance <- sum(matrixStats::rowVars(mat))
+
+eigValues = (pca@stdev)^2  ## EigenValues
+varExplained = eigValues / total_variance
+Stdev(object = seur_obj[["pca"]])[1]
+
+
+Idents(seur_obj) <- "timepoint"
+  pdf(paste0(resultsdir,'/6.Principle_components.pdf') ,width=12,height=6,paper='special')
+  print(ElbowPlot(seur_obj))
+  for (pcs in c(1:10)){
+    pc1_viz <- pcs*2-1
+    pc2_viz <- pcs*2
+    y_label = paste0(paste0(paste0("PC",pc2_viz), ' stdev:  '),round(Stdev(object = seur_obj[["pca"]])[pc2_viz],3))
+    x_label = paste0(paste0(paste0("PC",pc1_viz), ' stdev:  '),round(Stdev(object = seur_obj[["pca"]])[pc1_viz],3))
+    PC_dimred <- DimPlot(seur_obj, reduction = "pca", dims = c(pc1_viz,pc2_viz))+labs(y= y_label, x = x_label)
+    PC1_genes <- DimHeatmap(seur_obj, dims = c(pc1_viz), fast = FALSE)
+    PC2_genes <- DimHeatmap(seur_obj, dims = c(pc2_viz), fast = FALSE)
+    final_plot <- grid.arrange(as_grob(PC_dimred),as_grob(PC2_genes),as_grob(PC1_genes),
+                                   ncol=2,
+                                   as.table=TRUE)
+                                   #heights=c(3,1))
+    print(final_plot)}
+  dev.off()
+DimPlot(seur_obj, reduction = "pca")
+
+```
+
+umap regular normalization
+```{r}
+umap_col = "timepoint"
+umap_col2 = "descriptive_name"
+# PCs used for different UMAP representations
+pcs_for_overview = c(2,3,4,5,6,7,8,9,10, 12, 15, 20)
+# Generating a combined plot with only a legend in the first plotted (since this will be the same for the others)
+plot.list <- list()
+plot.list2 <- list()
+label.vector <- c(umap_col, umap_col2)
+j = 0
+
+## This could be done nicer with a loop probably, in which for each principle component of interest, there is a umap run, and 2 different labels are shown for it.
+
+for (i in (1:length(pcs_for_overview))){
+  seur_obj <- RunUMAP(seur_obj, dims = 1:pcs_for_overview[i])
+  dimnr <- as.character(pcs_for_overview[i])
+  print(dimnr)
+  if (i == 1){
+    plot.list[[dimnr]] <- DimPlot(seur_obj, reduction = "umap", group.by = label.vector[1], combine = TRUE) + ggtitle(paste0("UMAP 1:", dimnr))
+    plot.list2[[dimnr]] <- DimPlot(seur_obj, reduction = "umap", group.by = label.vector[2], combine = TRUE) + ggtitle(paste0("UMAP 1:", dimnr))
+    i = i + 1
+  }
+  else {
+    plot.list[[dimnr]] <- DimPlot(seur_obj, reduction = "umap", group.by = label.vector[1], combine = TRUE) + ggtitle(paste0("UMAP 1:", dimnr)) + theme(legend.position = "none")
+    plot.list2[[dimnr]] <- DimPlot(seur_obj, reduction = "umap", group.by = label.vector[2], combine = TRUE) + ggtitle(paste0("UMAP 1:", dimnr)) + theme(legend.position = "none")
+  i = i + 1
+  }
+}
+pdf(paste(resultsdir, "6a.norm_UMAPdiffsettings.pdf", sep = '/'), width = 20, height = 15)
+CombinePlots(plot.list, nrows = round(length(pcs_for_overview)/3))
+print(ElbowPlot(seur_obj))
+dev.off()
+
+```
+
+```{r}
+seur_obj <- RunUMAP(seur_obj, dims = 1:8)
+seur_obj <- FindNeighbors(seur_obj, dims = 1:8) 
+seur_obj <- FindClusters(seur_obj, verbose = FALSE, resolution = 0.5, graph.name = "sf_snn")
+seur_obj <- BuildClusterTree(seur_obj)
+  
+pdf(paste(resultsdir,'7a.norm_umap.pdf',sep="/") ,width=8,height=8,paper='special') 
+#DimPlot(seur_obj, label = TRUE)
+DimPlot(seur_obj, label=FALSE, group.by= "timepoint")+ ggtitle("timepoint") 
+DimPlot(seur_obj, label=FALSE, group.by= "cell_type")+ ggtitle("original identity") 
+DimPlot(seur_obj, label=TRUE, group.by = 'seurat_clusters') + ggtitle("Louvain Clustering") + ggtitle(paste0("cluster resolution ", 0.5))
+PlotClusterTree(object = seur_obj)
+DimPlot(seur_obj, label=FALSE, group.by= "batch")+ ggtitle("batch") 
+DimPlot(seur_obj, label=FALSE, group.by= "descriptive_name")+ ggtitle("name") 
+FeaturePlot(seur_obj, features = 'nCount_sf', cols =c('white','purple'))
+FeaturePlot(seur_obj, features = 'nFeature_sf', cols =c('white','purple'))
+FeaturePlot(seur_obj, features = 'altexps_MT_percent', cols =c('white','purple'))
+DimPlot(seur_obj, group.by = 'Phase')
+FeaturePlot(seur_obj, features = 'S.Score', cols =c('white','dodgerblue3'))
+FeaturePlot(seur_obj, features = 'G2M.Score', cols =c('white','green4'))
+dev.off()
+```
+
+#lets first perform clustering, after which we can start to quantify gene expression in all the clusters.
+```{r}
+pdf(paste(resultsdir, "8.clustering_resolution.pdf", sep = '/'), width = 20, height = 8)
+for (i in 1:20){
+  res <- i/10
+  cluster_variable_name <- paste0("sf_snn_res.", res)
+  seur_obj <- FindClusters(seur_obj, verbose = FALSE, resolution = res, graph.name = "sf_snn")
+  seur_obj <- BuildClusterTree(seur_obj)
+  p1 <- DimPlot(seur_obj, label=TRUE, group.by = 'timepoint') + ggtitle(paste0("cluster resolution ", res))
+  p2 <- DimPlot(seur_obj, label=TRUE, group.by = 'seurat_clusters') + ggtitle("Louvain Clustering") + ggtitle(paste0("cluster resolution ", res))
+  p3 <- ggplot(seur_obj@meta.data, aes(eval(parse(text= cluster_variable_name)), fill = timepoint))+geom_bar(stat="count")
+  print(multiplot(p1, p2, p3, cols = 3))
+  PlotClusterTree(object = seur_obj)
+
+
+}
+
+clustree(seur_obj, prefix = "sf_snn_res.", node_colour = 'sc3_stability')
+clustree(seur_obj, prefix = "sf_snn_res.")
+
+dev.off()
+
+
+#0.55 seems the best cluster resolution to find heterogeneity that isńt cell cycle based
+seur_obj <- FindClusters(seur_obj, verbose = FALSE, resolution = 0.50 , graph.name = "sf_snn")
+DimPlot(seur_obj, label=TRUE, group.by = 'seurat_clusters') + ggtitle("Louvain Clustering") 
+table(seur_obj$cell_type)
+```
+
+#lets merge cell cycle related clusters
+```{r}
+current.cluster.ids <- c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
+new.cluster.ids <- c('ESC', 'd11_1', 'LSC', 'LSC', 'ABCG2_cells', 'multipotent_1', 'd24_prop_diff', 'd11_2', 'ESC', 'multipotent_2')
+seur_obj$costum_clustering <- plyr::mapvalues(x = seur_obj$sf_snn_res.0.5, from = current.cluster.ids, to = new.cluster.ids)
+cluster_order <- c('ESC','multipotent_1','multipotent_2','d11_1','d11_2', 'ABCG2_cells', 'd24_prop_diff', 'LSC')
+
+
+
+# Re-level object@ident
+seur_obj$costum_clustering <- factor(x = seur_obj$costum_clustering, levels = cluster_order)
+
+pdf(paste(resultsdir, "8b.clustering_costum.pdf", sep = '/'), width = 20, height = 8)
+p1 <- DimPlot(seur_obj, label=TRUE, group.by = 'timepoint')
+p2 <- DimPlot(seur_obj, label=TRUE, group.by = 'costum_clustering') + ggtitle("Louvain Clustering")
+p3 <- ggplot(seur_obj@meta.data, aes(costum_clustering, fill = timepoint))+geom_bar(stat="count")+ theme(axis.text.x = element_text(angle = 90))
+
+print(multiplot(p1, p2, p3, cols = 3))
+dev.off()
+
+Idents(seur_obj) <- "costum_clustering"
+
+# cluster re-assignment occurs, which re-assigns clustering in my_levels (assuming you have 12 clusters in total)
+#my_levels <- c(7, 6, 4, 3, 1, 2, 5, 10, 8, 0, 9, 11, 12)
+
+```
+
+Lets find marker genes for each cluster
+```{r}
+cluster.markers <- FindAllMarkers(seur_obj, only.pos = TRUE)
+
+#n_genes <- 40
+#heatmap.markers <- cluster.markers %>% group_by(cluster) %>% top_n(n_genes, avg_logFC)
+#DoHeatmap(seur_obj, features = heatmap.markers$gene) + NoLegend()
+
+#filter on only sigi
+cluster.markers_fc <- cluster.markers[cluster.markers$p_val_adj < 0.01,]
+
+cluster.markers_fc <- cluster.markers_fc[(cluster.markers_fc$avg_log2FC > 0.58) ,]
+table(cluster.markers_fc$cluster)
+write.csv(cluster.markers, paste0(resultsdir,"/marker_genes.csv"))
+```
+
+#lets add the top10 of each cluster their marker genes to a file to vizualize
+```{r}
+
+cluster_markers = list()
+
+for (cluster in unique(cluster.markers_fc$cluster)){
+  print(cluster)
+  deg_subset <- cluster.markers_fc[cluster.markers_fc$cluster == cluster,]
+  cluster_genes <- head(deg_subset, 20)
+  cluster_markers[cluster] = list(cluster_genes$gene)
+}
+cluster_markers = t(as.data.frame(cluster_markers))
+
+write.table(cluster_markers, paste0(resultsdir,"/top_markers.csv"), col.names = F, sep =",")
+```
+
+```{r}
+plot_list <- list()
+cluster_GOs <- c() 
+expressed_genes <- row.names(counts(sce_qc)[rowSums(counts(sce_qc))>20,])
+
+for (cluster in unique(cluster.markers_fc$cluster)){
+  print(cluster)
+  df_subset <- cluster.markers_fc[cluster.markers_fc$cluster == cluster,]
+  cluster_genes <- unique(str_sub(df_subset$gene,end = -1))
+  PC1_ego <- enrichGO(gene = cluster_genes,
+                          universe = expressed_genes,
+                          OrgDb         = org.Hs.eg.db,
+                          keyType       = "SYMBOL",
+                          ont           = "BP",
+                          pAdjustMethod = "BH",
+                          #pvalueCutoff  = 0.01,
+                          qvalueCutoff  = 0.05)
+  if(is.null(PC1_ego)){
+        go_plot1 <- rectGrob(gp=gpar(col=NA))
+        }else{
+        go_plot1 <- barplot(PC1_ego, showCategory=10)
+        }
+      plot_list <- c(plot_list, list(go_plot1))
+      cluster_GOs <- append(cluster_GOs, (paste('cluster', cluster, sep = '')))
+}
+grob2 = ggarrange(plotlist = plot_list , ncol =1, labels = cluster_GOs) #align = 'v')
+
+
+
+```
+
+Heatmap cluster marking genes:
+```{r}
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+
+heatmap.markers <- cluster.markers_fc
+cluster.markers_fc$log2FC <- cluster.markers_fc$avg_logFC 
+top10 <- cluster.markers_fc %>%  group_by(cluster) %>%  top_n(n = 5)
+top5_genes <- DoHeatmap(seur_obj, features = top10$gene) + NoLegend()
+top10 <- cluster.markers_fc %>% group_by(cluster) %>% top_n(n = 10, wt = 'avg_log2FC')
+marker_top5 <- DoHeatmap(seur_obj, features = top10$gene) + NoLegend()
+n_genes <- 100
+heatmap.markers <- cluster.markers_fc %>% group_by(cluster) %>% top_n(n_genes, avg_log2FC)
+
+cell_type_plot <- DimPlot(seur_obj, label=TRUE, group.by = 'timepoint',pt.size = 2) + ggtitle("Timepoint") 
+cluster_plot <- DimPlot(seur_obj, label=TRUE, group.by = 'costum_clustering', pt.size = 2) + ggtitle("Louvain Clustering") 
+grob_clustering = ggarrange(plotlist = list(cell_type_plot, cluster_plot) , ncol =1) #labels = cluster_GOs) #align = 'v')
+
+nclust<- length(unique(as.numeric(cluster.markers_fc$cluster)))
+
+RGB_colours_ggplot <- as.list(as.character(gg_color_hue(nclust)))
+names <- as.numeric(unique(heatmap.markers$cluster))
+col_fun = colorRamp2(names, RGB_colours_ggplot)#make sure the rows correspond to ggplot collour mapping
+
+mat <- as.matrix(seur_obj@assays$sf@scale.data[heatmap.markers$gene,])
+mat <- rbind(mat,seur_obj@meta.data$costum_clustering)
+mat <- mat[,order(mat[nrow(mat),])]
+
+column_ha <- HeatmapAnnotation(cluster = mat[nrow(mat),], col =list(cluster = col_fun))
+#column_ha <- HeatmapAnnotation(cluster = unique(heatmap.markers$cluster),], col =list(cluster = col_fun))
+
+breaks <- mat[nrow(mat),] 
+mat <- mat[-nrow(mat),] 
+
+row_ha = rowAnnotation(adj_p_vallue = heatmap.markers$p_val_adj)
+
+clust_heatmap <- grid.grabExpr(draw(Heatmap(mat, column_split = breaks,row_split = as.numeric(heatmap.markers$cluster), cluster_columns = F, cluster_rows = F,show_row_names = F,show_column_names = F,row_names_gp = gpar(fontsize = 6), top_annotation = column_ha, left_annotation = row_ha, row_names_rot = -40)))
+
+top5_cluster_markers <- cluster.markers_fc %>%  group_by(cluster) %>%  top_n(n = 5)
+# df_wider <- pivot_wider(df, names_from = cluster, values_from = gene_name_shorter) 
+# separate_rows(df_wider,sep = "[^[:alnum:].]+", convert = FALSE)
+df <- top5_cluster_markers
+pdf(paste0(resultsdir,'/9.Complex_heatmap.pdf') ,width=40,height=16,paper='special') 
+plot_grid(clust_heatmap,grob2,grob_clustering,ncol = 3, rel_heights = c(1, 4,2), rel_widths = c(3,2,2))
+plot.new()
+grid.table(df)
+dev.off()
+```
+
+
+#save environement to run velocity upon
+```{r}
+saveRDS(seur_obj, file = paste0(resultsdir,"/seur_obj.rds"))
+seur_obj <- readRDS(paste0(resultsdir,"/seur_obj.rds"))
+```
+
+#run progeny 
+```{r}
+CellsClusters <- data.frame(Cell = names(Idents(seur_obj)), 
+    CellType = as.character(Idents(seur_obj)),
+    stringsAsFactors = FALSE)
+
+seur_obj@assays$RNA <- seur_obj@assays$sf 
+seur_obj <- progeny(seur_obj, scale=FALSE, organism="Human", top=500, perm=1,  return_assay = TRUE)
+
+## We can now directly apply Seurat functions in our Progeny scores. 
+## For instance, we scale the pathway activity scores. 
+seur_obj <- Seurat::ScaleData(seur_obj, assay = "progeny") 
+
+progeny_scores_df <- 
+    as.data.frame(t(GetAssayData(seur_obj, slot = "scale.data", 
+        assay = "progeny"))) %>%
+    rownames_to_column("Cell") %>%
+    gather(Pathway, Activity, -Cell) 
+
+progeny_scores_df <- inner_join(progeny_scores_df, CellsClusters)
+
+summarized_progeny_scores <- progeny_scores_df %>% 
+    group_by(Pathway, CellType) %>%
+    summarise(avg = mean(Activity), std = sd(Activity))
+
+summarized_progeny_scores_df <- summarized_progeny_scores %>%
+    dplyr::select(-std) %>%   
+    spread(Pathway, avg) %>%
+    data.frame(row.names = 1, check.names = FALSE, stringsAsFactors = FALSE) 
+
+paletteLength = 100
+myColor = colorRampPalette(c("Darkblue", "white","red"))(paletteLength)
+
+progenyBreaks = c(seq(min(summarized_progeny_scores_df), 0, 
+                      length.out=ceiling(paletteLength/2) + 1),
+                  seq(max(summarized_progeny_scores_df)/paletteLength, 
+                      max(summarized_progeny_scores_df), 
+                      length.out=floor(paletteLength/2)))
+
+
+mat <- t(summarized_progeny_scores_df[,-1])
+
+
+pathway_viz_object <- seur_obj
+pathways <- rownames(pathway_viz_object@assays$progeny@scale.data)
+pathways <- paste("progeny_targets_", pathways, sep="")
+rownames(pathway_viz_object@assays$progeny@scale.data) <- pathways
+DefaultAssay(pathway_viz_object) <- "progeny"
+
+#VlnPlot(pathway_viz_object, combine=F, features = pathways, group.by = 'costum_clustering', assay = 'progeny', slot = 'scale.data')
+
+pdf(paste0(resultsdir,'/10.progeny_pwahtway_targets_activation.pdf') ,width=10,height=10,paper='special') 
+Heatmap(mat, cluster_columns =T)
+FeaturePlot(pathway_viz_object, features = pathways, pt.size = 0.2, ncol = 4, combine=F, slot = 'scale.data', blend.threshold = 4)
+
+dev.off()
+
+```
+
+Lets vizualize both the top markers from each cluster, and the markers from the marker gexpression file
+```{r}
+marker_gene_file <- "/ceph/rimlsfnwi/data/moldevbio/zhou/jsmits/scRNAseq_iPSC_iLSCs/LSC_Marker_Genes.csv"
+top_cluster_file <- paste0(resultsdir,"/top_markers.csv")
+
+marker_dir <- paste0(resultsdir, '/marker_genes/')
+print(marker_dir)
+system(paste("mkdir -p ", marker_dir))
+
+
+for (genefile in c(marker_gene_file, top_cluster_file)){
+  marker_genes_df <- read.table(genefile, row.names=1, header = FALSE, sep = ',',comment.char = "#", stringsAsFactors = F)
+  for (row in 1:nrow(marker_genes_df)) {
+  
+      filename <- rownames(marker_genes_df[row,])
+      filename <- paste0(marker_dir,filename)
+      marker_genes <- as.list(marker_genes_df[row,])
+      marker_genes <- as.list(marker_genes[ marker_genes != ""])
+  
+      n <- length(marker_genes)
+      k <- 10 ## your LEN
+      marker_gene_sets <- split(marker_genes, rep(1:ceiling(n/k), each=k)[1:n])
+  
+      pdf(paste0(filename,'.pdf'), width = 20, height = 15)
+  
+      for (genes in  marker_gene_sets){#loop over subsets of max 12 genes to vizualize
+        plot_list1 <- DimPlot(seur_obj, label=TRUE, group.by = 'timepoint', combine = F, pt.size = 0.1)
+        plot_list1 <- append(plot_list1, DimPlot(seur_obj, label=TRUE, group.by = 'costum_clustering', combine = F, pt.size = 0.1))
+        count_plots <- plot_list1
+        count_plots_clusters <- plot_list1
+        count_plots <- append(count_plots, try(VlnPlot(seur_obj, combine=F, features = as.vector(unlist(genes)), ncol = 4, group.by = 'timepoint', assay = 'sf')))
+        count_plots_clusters <- append(count_plots_clusters, try(VlnPlot(seur_obj, combine=F, features = as.vector(unlist(genes)), ncol = 4, group.by = 'costum_clustering', assay = 'sf')))
+  
+      plot_list1 <- append(plot_list1,FeaturePlot(seur_obj, features = as.vector(unlist(genes)), pt.size = 0.2, ncol = 4, combine=F))
+      print(cowplot::plot_grid(plotlist = plot_list1))
+      #print(FeaturePlot(seur_obj, features = genes, pt.size = 0.2, ncol = 4))
+
+      p1 <- cowplot::plot_grid(plotlist = count_plots)
+      title <- ggdraw() + draw_label("seurat norm int of marker genes per timepoint", fontface = 'bold')
+      print(cowplot::plot_grid(title, p1, ncol = 1, rel_heights = c(0.1, 1)))
+      p1 <- cowplot::plot_grid(plotlist = count_plots_clusters)
+      title <- ggdraw() + draw_label("seurat norm int of marker genes per timepoint", fontface = 'bold')
+      print(cowplot::plot_grid(title, p1, ncol = 1, rel_heights = c(0.1, 1)))
+  
+      }
+    dev.off()
+      
+      
+      
+    }}
+
+
+```
+
+Export the seurat object for shiny app vizualization
+```{r}
+DimPlot(seur_obj, reduction = "umap")
+
+# make the SingleCellExperiment object from the Seurat object:
+sce_shiny <- as.SingleCellExperiment(seur_obj)
+# check if coordinates were transferred well:
+saveRDS(sce_shiny,paste0(resultsdir,'/seur_obj_shiny.rds'))
+```
+
+#run monocle pseudotime
+```{r}
+library('monocle3')
+seur_obj <- readRDS('/ceph/rimlsfnwi/data/moldevbio/zhou/jsmits/scRNAseq_iPSC_iLSCs/analysis/20210721/seur_obj.rds')
+#cds <- updateCDS(seur_obj)
+cds <- as.cell_data_set(seur_obj)
+cds <- estimate_size_factors(cds)
+cds = cluster_cells(cds, reduction_method = "UMAP") #Monocle3 Pipeline
+cds = learn_graph(cds, use_partition = F, close_loop = F) #Change Partition and or Close_loop as desired
+cds = order_cells(cds)
+pdf(paste0(resultsdir,'/13.monocle3_pseudotime.pdf') ,width=10,height=10,paper='special') 
+plot_cells(
+  cds = cds,
+  color_cells_by = "pseudotime",
+  show_trajectory_graph = TRUE, cell_size = 2
+) + ggtitle("UMAP of Pseudotime")
+dev.off()
+#plot_cells(cds, genes=c("PAX6", "KRT14"), cell_size = 2)
+# 
+# #Subset ad and hc, perform monocle3 pipeline
+# interad <- inter[,grepl("AD", colData(inter)$disease, ignore.case=TRUE)]
+# interad = preprocess_cds(interad)
+# pr_graph_test_res <- graph_test(interad,neighbor_graph="knn" )
+# pr_deg_ids <- row.names(subset(pr_graph_test_res, q_value < 0.05))#maybe p val?
+# gene_module_df <- find_gene_modules(interad[pr_deg_ids,], resolution=1e-2)
+# sig_gene_namesad <- row.names(interad[gene_module_df$id])
+# 
+# interhc <- inter[,grepl("HC", colData(inter)$disease, ignore.case=TRUE)]
+# interhc = preprocess_cds(interhc)
+# pr_graph_test_res <- graph_test(interhc)
+# pr_deg_ids <- row.names(subset(pr_graph_test_res, q_value < 0.05))
+# gene_module_df <- find_gene_modules(interhc[pr_deg_ids,], resolution=1e-2)
+# sig_gene_nameshc <- row.names(interhc[gene_module_df$id])
+
+```
+
+
+#lets try to integrate the data with the LAKO scCornea atlas
+```{r}
+
+#seur_obj <- readRDS(paste0(resultsdir,"/seur_obj.rds"))
+seur_obj <- readRDS('/ceph/rimlsfnwi/data/moldevbio/zhou/jsmits/scRNAseq_iPSC_iLSCs/analysis/20210721/seur_obj.rds')
+LAKO_obj <- readRDS('/ceph/rimlsfnwi/data/moldevbio/zhou/jarts/R/scRNA-seq/lakoRNAannotated.rds')
+
+reference <- LAKO_obj
+reference$id <- 'reference'
+seur_obj$id <- 'query'
+
+pdf(paste0(resultsdir,'/11.objects_before_merge.pdf') ,width=10,height=10,paper='special') 
+DimPlot(seur_obj, label=TRUE, group.by = 'costum_clustering')
+DimPlot(reference, label=TRUE, group.by = 'costum_clustering')
+dev.off()
+```
+
+```{r}
+#https://satijalab.org/seurat/articles/integration_introduction.html
+
+obj_list <- c(seur_obj, reference)
+obj_list <- lapply(X = obj_list, FUN = function(x) {
+    x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 1000)
+})
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = obj_list)
+
+#epithelial anchors:
+epi.anchors <- FindIntegrationAnchors(object.list = obj_list, anchor.features = features)
+
+#create integrated data assay
+epi_combined <- IntegrateData(anchorset = epi.anchors)
+
+#
+DefaultAssay(epi_combined) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+epi_combined <- ScaleData(epi_combined, verbose = FALSE)
+epi_combined <- RunPCA(epi_combined, npcs = 40, verbose = FALSE)
+epi_combined <- RunUMAP(epi_combined, reduction = "pca", dims = 1:20)
+epi_combined <- FindNeighbors(epi_combined, reduction = "pca", dims = 1:20)
+epi_combined <- FindClusters(epi_combined, resolution = 0.15)
+
+#viz
+pdf(paste0(resultsdir,'/12.CCA_merge.pdf') ,width=10,height=10,paper='special') 
+DimPlot(epi_combined, reduction = "umap", group.by = "id")
+DimPlot(epi_combined, reduction = "umap", group.by = 'costum_clustering',label = TRUE, repel = TRUE)
+DimPlot(epi_combined, reduction = "umap", group.by = "seurat_clusters")
+epi_combined <- RenameIdents(epi_combined, `0` = "Corneal Basal", `1` = "Conjunctival", `2` = "Corneal_stromal",
+    `3` = "LSCs", `4` = "multipotent", `5` = "LNPCs", `6` = "stromal", `7` = "d11", `8` = "VES", `9` = "ABCG2",
+    `10` = "FCECs", `11` = "MEC", `12` = "IC", `13` = "bad_cells", `14` = "bad_cells", `15` = "bad_cells")
+DimPlot(epi_combined, reduction = "umap",label = TRUE, repel = TRUE)
+
+dev.off()
+
+DefaultAssay(epi_combined) <- "RNA"
+LSC_markers <- FindConservedMarkers(epi_combined, ident.1 = 'LSC', grouping.var = "id", verbose = FALSE)
+head(LSC_markers)
+
+
+
+
+```
+
+
+
+
+
+```{r}
+#Fast integration using reciprocal PCA (RPCA)
+
+obj_list <- lapply(X = obj_list, FUN = function(x) {
+    x <- ScaleData(x, features = features, verbose = FALSE)
+    x <- RunPCA(x, features = features, verbose = FALSE)
+})
+
+epi_anchors_RPCA <- FindIntegrationAnchors(object.list = obj_list, anchor.features = features, reduction = "rpca")
+
+
+#create integrated data assay
+epi_combined <- IntegrateData(anchorset = epi_anchors_RPCA)
+
+
+DefaultAssay(epi_combined) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+epi_combined <- ScaleData(epi_combined, verbose = FALSE)
+epi_combined <- RunPCA(epi_combined, npcs = 40, verbose = FALSE)
+epi_combined <- RunUMAP(epi_combined, reduction = "pca", dims = 1:20)
+epi_combined <- FindNeighbors(epi_combined, reduction = "pca", dims = 1:20)
+#epi_combined <- FindClusters(epi_combined, resolution = 0.5)
+
+#viz
+pdf(paste0(resultsdir,'/12.RPCA_merge.pdf') ,width=10,height=10,paper='special') 
+DimPlot(epi_combined, reduction = "umap", group.by = "id")
+DimPlot(epi_combined, reduction = "umap", group.by = 'costum_clustering',label = TRUE, repel = TRUE)
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+```{r}
+anchors <- FindTransferAnchors(
+  reference = LAKO_obj,
+  query = seur_obj,
+  reference.reduction = "pca",
+  dims = 1:10
+)
+```
+
+```{r}
+iLSC_on_LAKO <- MapQuery(
+  anchorset = anchors,
+  query = seur_obj,
+  reference = LAKO_obj,
+  refdata = list(
+    costum_clustering = "costum_clustering",
+    predicted_ADT = "ADT"
+  ),
+  reference.reduction = "pca", 
+  reduction.model = "umap"
+)
+```
+
+
+
+
+```{r}
+ifnb.list <- list(seur_obj, LAKO_obj)
+
+features <- SelectIntegrationFeatures(object.list = ifnb.list)
+
+immune.anchors <- FindIntegrationAnchors(object.list = ifnb.list, anchor.features = features)
+immune.combined <- IntegrateData(anchorset = immune.anchors)
+```
+
+```{r}
+# specify that we will perform downstream analysis on the corrected data note that the
+# original unmodified data still resides in the 'RNA' assay
+DefaultAssay(immune.combined) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+immune.combined <- ScaleData(immune.combined, verbose = FALSE)
+immune.combined <- RunPCA(immune.combined, npcs = 30, verbose = FALSE)
+immune.combined <- RunUMAP(immune.combined, reduction = "pca", dims = 1:30)
+immune.combined <- FindNeighbors(immune.combined, reduction = "pca", dims = 1:30)
+immune.combined <- FindClusters(immune.combined, resolution = 0.5)
+```
+
+
+```{r}
+DimPlot(immune.combined, reduction = "umap", group.by = 'costum_clustering',label = TRUE, repel = TRUE)
+DimPlot(immune.combined, reduction = "umap", group.by = 'orig.ident')
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
