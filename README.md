@@ -3,7 +3,7 @@
 # Introduction
 
 # Preprocessing files for single cell integration from public 10X data
-You can download publicaly fastq data once conda is installed, the samples.tsv and the config.yaml are correctly filled in. Additionally, you need to have the right activated seq2science environment.
+You can download publicly fastq data once conda is installed, the samples.tsv and the config.yaml are correctly filled in. Additionally, you need to have the right activated seq2science environment.
 
 BASH example code:
 ```console
@@ -170,7 +170,7 @@ CSB_ATAC_BAM    /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/split_ba
 ```
 To determine motif analysis on significant peaks, run the Python script .... (combine peaks script) with measured replicates. Next, run the R script ... for determining the significant peaks. Next, subselect the peaks in the combine peaks file in bash. 
 ```console
-
+$ command
 ```
 
 The subselected raw counts file can be quantile normalized with the Python script ... . This file can be used as input for Gimme Mealstrom.
@@ -186,10 +186,15 @@ Install and activate your Gimme motifs (Gimme3.yaml) environment in conda and ru
 $ gimme maelstrom quantilepeaks.txt /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/genome/genomehg38gimme/hg38/hg38.fa /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/motif_analysis/all_differential/ -N 6 -F 0.8
 ```
 
-# 
+# Combined analysis of motifs and gene expression
+You can determine which transcription factors binding to your motifs are also expressed in your single cell populations. Run the R script .... to generate heatmaps with gene expression and quantile normalization.
+
+# Generating the nessesary files for ANANSE and running ANANSE.
+
+Lastly, ananse can be run with the python script .... . The files can be further analysed with the R script .... .
 
 # Notes
-Note for setting the correct path:
+Note for setting the correct paths in Cellranger:
 ```console
 export PATH=/ceph/rimlsfnwi/data/moldevbio/zhou/jarts/cellranger/cellranger-6.0.1:$PATH
 ```
