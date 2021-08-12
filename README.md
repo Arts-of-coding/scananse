@@ -139,7 +139,7 @@ Generating the tracks in a bigwig environment
 for bdg_file in *bdg; do LC_COLLATE=C sort -k1,1 -k2,2n $bdg_file > conversion_file.bdg ; bedGraphToBigWig conversion_file.bdg /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/cellrangeratac/hg38.chrom.sizes $(basename -s .bdg $bdg_file).bw; rm conversion_file.bdg; done
 ```
 
-# Preprocessing the .narrowPeak files for the combine peaks script in Jupyter notebook.
+# Gimme Maelstrom analysis pipeline in bash and Conda
 Exclude unwanted chromosomes in bash.
 ```console
 grep -Ev 'GL000|KI|chrM' *.narrowPeak
@@ -160,7 +160,7 @@ StC_ATAC_peaks  /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/split_ba
 LiCo_ATAC_BAM   /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/split_bam_4cells/4cells/outs/subsets/LiCo.bam   ATAC_BAM        LiCo
 StCSC_ATAC_BAM  /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/split_bam_4cells/4cells/outs/subsets/StCSC.bam  ATAC_BAM        StCSC
 ```
-If you want to calculate the significant peaks, then you also need to specify replicate files as well in the files.tsv.
+If you want to calculate the significant peaks (for Gimme Maelstrom analysis), then you also need to specify replicate files as well in the files.tsv.
 ```console
 $ tail files.tsv
 ## ATACseq BAM replicate files
@@ -168,6 +168,25 @@ CSB_ATAC_BAM    /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/split_ba
 CSB_ATAC_BAM    /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/split_bam_repex/reps/outs/subsets/CSB2.bam      ATAC_BAM        CSBrep2 CSBrep2
 CSB_ATAC_BAM    /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/split_bam_repex/reps/outs/subsets/CSB3.bam      ATAC_BAM        CSBrep3 CSBrep3
 ```
+To determine motif analysis on significant peaks, run the Python script .... (combine peaks script) with measured replicates. Next, run the R script ... for determining the significant peaks. Next, subselect the peaks in the combine peaks file in bash. 
+```console
+
+```
+
+The subselected raw counts file can be quantile normalized with the Python script ... . This file can be used as input for Gimme Mealstrom.
+```console
+$ head quantilepeaks.txt
+loc	Ves	StC	MEC	LPCs	LNPCs	IC	FCECs	CjS	CSSCs	CSB	CB
+chr1:911401-911601	1.0851503710073496	0.769986796647647	0.963644488152334	2.55757675487907	2.901962254588777	2.5544817899948575	2.438817238123795	2.438817238123795	1.3817937286844038	2.9084297593729525	2.714010079063348
+chr1:967906-968106	1.0851503710073496	1.7798851919799248	0.963644488152334	1.673191906190539	2.901962254588777	1.007465278910087	
+```
+
+Install and activate your Gimme motifs (Gimme3.yaml) environment in conda and run Gimme Maelstrom.
+```console
+$ gimme maelstrom quantilepeaks.txt /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/genome/genomehg38gimme/hg38/hg38.fa /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/motif_analysis/all_differential/ -N 6 -F 0.8
+```
+
+# 
 
 # Notes
 Note for setting the correct path:
