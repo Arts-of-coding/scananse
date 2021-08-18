@@ -120,9 +120,10 @@ nice -30 samtools merge mergedCjS234.bam /ceph/rimlsfnwi/data/moldevbio/zhou/jar
 First, install MACS2 peak caller via conda and activate the environment. Then run the command below to generate peak files for each population.
 
 ```console
-for bam in *.bam \
-do \
-nice -30 macs2 callpeak -t $bam --name $bam --nomodel --shift 100 --ext 200 --qval 5e-2 -B --SPMR
+for bam in *.bam
+do
+macs2 callpeak -t $bam --name $bam --nomodel --shift 100 --ext 200 --qval 5e-2 -B --SPMR
+done
 ```
 
 # Making bigwig tracks (see R file)
