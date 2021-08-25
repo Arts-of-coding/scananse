@@ -169,12 +169,9 @@ CSB_ATAC_BAM    /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/split_ba
 CSB_ATAC_BAM    /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/split_bam_repex/reps/outs/subsets/CSB2.bam      ATAC_BAM        CSBrep2 CSBrep2
 CSB_ATAC_BAM    /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/split_bam_repex/reps/outs/subsets/CSB3.bam      ATAC_BAM        CSBrep3 CSBrep3
 ```
-To determine motif analysis on significant peaks, run the Python script .... (combine peaks script) with measured replicates. Next, run the R script ... for determining the significant peaks. Next, subselect the peaks in the combine peaks file in bash. 
-```console
-$ command
-```
+To determine motif analysis on significant peaks, run the Python script ...Combine_peaks_V2.ipynb... with measured replicates. Next, run the R script ...significance_calc_peaks_gimme.R... for determining the significant peaks.
 
-The subselected raw counts file can be quantile normalized with the Python script ... . This file can be used as input for Gimme Mealstrom.
+The joined coverage table file can be quantile normalized and subselected for significant regions with the Python script ...TPM_Quantile_script... . This file can be used as input for Gimme Mealstrom.
 ```console
 $ head quantilepeaks.txt
 loc	Ves	StC	MEC	LPCs	LNPCs	IC	FCECs	CjS	CSSCs	CSB	CB
