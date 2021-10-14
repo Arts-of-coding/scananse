@@ -1,17 +1,42 @@
 # single_cell_ANANSE_pipeline
 
 # Introduction
+This repository contains all code and command used to analyse a publicly available dataset of the human corneal atlas.
+
+# Installing Miniconda.
+Install Miniconda within an existing Linux environment (Ubuntu).
+
+Retrieve the latest Miniconda.
+```console
+$ wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+```
+
+Generate the script to be executable.
+```console
+$ chmod +x Miniconda3-latest-Linux-x86_64.sh
+```
+
+Run the executable miniconda script.
+```console
+$ ./Miniconda3-latest-Linux-x86_64.sh
+```
+
+# Installing the right environments for downstream analysis in Miniconda.
+Install the nessesary channels if Bioconda has not been used before. 
+```console
+$ conda config --add channels defaults
+$ conda config --add channels bioconda
+$ conda config --add channels conda-forge
+```
 
 # Preprocessing files for single cell integration from public 10X data
 You can download publicly fastq data once conda is installed, the samples.tsv and the config.yaml are correctly filled in. Additionally, you need to have the right activated seq2science environment.
 
-BASH example code:
 ```console
 nice -30 seq2science run download-fastq -j 8 -k -c /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/seq2science_config/config.yaml
 ```
 Next, the SRA files need to be split, because seq2science can't deal properly with single cell data. This can be accomplished by using sra-tools. In the correct activated sra-tools conda environment run the code below.
 
-BASH example code:
 ```console
 nice -30 fastq-dump --split-files --outdir /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/fastq/ /ceph/rimlsfnwi/data/moldevbio/zhou/jsmits/iPSC_LSC_s2s/data_Lako/Lako_data/sra/SRR12386341/SRR12386341/SRR12386341.sra
 ```
