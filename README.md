@@ -195,7 +195,7 @@ CSB_ATAC_BAM    /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/split_ba
 CSB_ATAC_BAM    /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/split_bam_repex/reps/outs/subsets/CSB3.bam      ATAC_BAM        CSBrep3 CSBrep3
 ```
 
-To determine motif analysis on significant peaks, run the Python script "Combine_peaks_V2.ipynb" with measured replicates. Next, run the R script "significance_calc_peaks_gimme.R" for determining the significant peaks.
+Significant peaks can be calculated with the script "significance_calc_peaks_gimme.R". To determine motif analysis on these significant peaks, run the Python script "Combine_peaks_V2.ipynb" with measured replicates. Next, run the R script "significance_calc_peaks_gimme.R" for determining the significant peaks.
 
 The joined coverage table file can be quantile normalized and subselected for significant regions with the Python script "TPM_Quantile_script_V3.ipynb" . This file can be used as input for Gimme Mealstrom.
 ```console
