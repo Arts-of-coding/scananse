@@ -197,7 +197,7 @@ CSB_ATAC_BAM    /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/split_ba
 
 To determine motif analysis on significant peaks, run the Python script "Combine_peaks_V2.ipynb" with measured replicates. Next, run the R script "significance_calc_peaks_gimme.R" for determining the significant peaks.
 
-The joined coverage table file can be quantile normalized and subselected for significant regions with the Python script "TPM_Quantile_script_V3" . This file can be used as input for Gimme Mealstrom.
+The joined coverage table file can be quantile normalized and subselected for significant regions with the Python script "TPM_Quantile_script_V3.ipynb" . This file can be used as input for Gimme Mealstrom.
 ```console
 $ head quantilepeaks.txt
 loc	Ves	StC	MEC	LPCs	LNPCs	IC	FCECs	CjS	CSSCs	CSB	CB
@@ -211,10 +211,10 @@ $ gimme maelstrom quantilepeaks.txt /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/da
 ```
 
 # Combined analysis of motifs and gene expression
-You can determine which transcription factors binding to your motifs are also expressed in your single cell populations. Run the R script "complex_heatmap_motifs_V3.R" to generate heatmaps with gene expression and quantile normalization.
+With the script "significance_calc_RNA_DE_ESC.R" you can generate a Z-score matrix of gene expression. You can determine which transcription factors binding to your motifs are also expressed in your single cell populations. Run the R script "complex_heatmap_motifs_V3.R" to generate heatmaps with gene expression and quantile normalization.
 
 # Generating the nessesary files for ANANSE and running ANANSE.
-Lastly, ananse can be run with the python script "Run_ananse_V4_JA.ipynb" . The files can be further analysed with the R script "ANANSE_analysis_V4.R" .
+Lastly, ananse can be run with the python script "Run_ananse_V4_JA.ipynb". The files can be further analysed with the R script "ANANSE_analysis_V4.R".
 
 # Notes
 Note for setting the correct paths in Cellranger within the terminal:
