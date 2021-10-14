@@ -1,0 +1,215 @@
+```{r}
+
+## Storing results ##
+workdir <- "/ceph/rimlsfnwi/data/moldevbio/zhou/jarts/R/pseudotime/"
+# if regression is performed: this will already be included in the folder name
+result_descript = "_results_PreprocessingDataset_complete_clean"
+
+## Location of scripts ##
+source("/ceph/rimlsfnwi/data/moldevbio/zhou/jsmits/tools/scripts/qc_ercc_384plot.R")
+source("/ceph/rimlsfnwi/data/moldevbio/zhou/jsmits/tools/scripts/qc_umis_384plot.R")
+source("/ceph/rimlsfnwi/data/moldevbio/zhou/jsmits/tools/scripts/read_kb_dataset_s2s.R")
+
+dateoftoday <- gsub("-", "", as.character(Sys.Date()))
+resultsdir <- paste0(workdir, dateoftoday)
+system(paste("mkdir -p ", resultsdir))
+
+#run first time (no good anaconda packages, sadly):
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install("DO.db", force = TRUE)#update none
+# if (!requireNamespace("BiocManager", quietly=TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install("R.utils", force = TRUE)#update none
+# remotes::install_github('satijalab/seurat-wrappers') #update none
+# if (!requireNamespace("BiocManager", quietly=TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install("kstreet13/slingshot",force = TRUE) # update none
+#if (!requireNamespace("BiocManager", quietly=TRUE))
+#     install.packages("BiocManager")
+#BiocManager::install("ggbeeswarm",force = TRUE) # update none
+
+# Loading the important repositories # 
+require("devtools")
+library('ggplot2')
+library('plyr')
+library('dplyr')
+library('tidyr')
+library('mvoutlier')
+library('limma')
+library('knitr')
+library('SingleCellExperiment')
+library("scater")
+library("Seurat")
+library("scran")
+library("RColorBrewer")
+library("plot3D")
+library("stringr")
+library("SAVER")
+library("parallel")
+library('progeny')
+library("ComplexHeatmap") 
+library("org.Hs.eg.db")
+library("clusterProfiler") 
+library("ggpubr")
+library("circlize")
+library("cowplot")
+library('clustree')
+library('tidyverse')
+library('monocle')
+library('SeuratWrappers')
+library('monocle3')
+library('slingshot')
+library('ggbeeswarm')
+
+```
+#run monocle pseudotime
+```{r}
+seur_obj <- readRDS('/ceph/rimlsfnwi/data/moldevbio/zhou/jarts/R/scRNA-seq/lakoRNAannotated.rds')
+#cds <- updateCDS(seur_obj)
+seur_obj[["umap"]] <- NULL
+seur_obj <- RunUMAP(seur_obj, dims = 1:10, reduction.name = "UMAP")
+
+cds <- as.cell_data_set(seur_obj)
+cds = cluster_cells(cds, reduction_method = "UMAP") #Monocle3 Pipeline
+cds <- estimate_size_factors(cds)
+cds = learn_graph(cds, use_partition = T, close_loop = F) #Change Partition and or Close_loop as desired
+
+pData(cds)$louvain_cluster <- pData(cds)$"costum_clustering"
+#root_group = colnames(cds)[pData(cds)$louvain_cluster == "LNPCs"]
+root_group = colnames(cds)[pData(cds)$louvain_cluster == "StC"]
+cds = order_cells(cds, root_cells = root_group)
+pdf(paste0(resultsdir,'/13StC.monocle3_pseudotime.pdf') ,width=10,height=10,paper='special') 
+plot_cells(
+  cds = cds,
+  color_cells_by = "pseudotime",
+  show_trajectory_graph = T, cell_size = 2
+) + ggtitle("UMAP of Pseudotime StC")
+dev.off()
+
+root_group = colnames(cds)[pData(cds)$louvain_cluster == "CSSCs"]
+cds = order_cells(cds, root_cells = root_group)
+pdf(paste0(resultsdir,'/13CSSCs.monocle3_pseudotime.pdf') ,width=10,height=10,paper='special') 
+plot_cells(
+  cds = cds,
+  color_cells_by = "pseudotime",
+  show_trajectory_graph = T, cell_size = 2
+) + ggtitle("UMAP of Pseudotime CSSCs")
+dev.off()
+
+root_group = colnames(cds)[pData(cds)$louvain_cluster == "LNPCs"]
+cds = order_cells(cds, root_cells = root_group)
+pdf(paste0(resultsdir,'/13LNPCs.monocle3_pseudotime.pdf') ,width=10,height=10,paper='special') 
+plot_cells(
+  cds = cds,
+  color_cells_by = "pseudotime",
+  show_trajectory_graph = T, cell_size = 2
+) + ggtitle("UMAP of Pseudotime LNPCs")
+dev.off()
+
+root_group = colnames(cds)[pData(cds)$louvain_cluster == "LPCs"]
+cds = order_cells(cds, root_cells = root_group)
+pdf(paste0(resultsdir,'/13LPCs.monocle3_pseudotime.pdf') ,width=10,height=10,paper='special') 
+plot_cells(
+  cds = cds,
+  color_cells_by = "pseudotime",
+  show_trajectory_graph = T, cell_size = 2
+) + ggtitle("UMAP of Pseudotime LPCs")
+dev.off()
+
+################################################################3
+# Slingshot pseudotime
+cells.to.subset <- c("LNPCs","LPCs","CSB","CB","CjS")
+seur_obj2 <-subset(x=seur_obj, subset = (costum_clustering == "LPCs"|costum_clustering == "LNPCs"|costum_clustering == "CB"|costum_clustering == "CSB"|costum_clustering == "CjS"))
+seur_obj2$costum_clustering
+seur_obj2 <- droplevels(x = seur_obj2)
+seur_obj2$costum_clustering <- droplevels(x = seur_obj2$costum_clustering)
+sce <- as.SingleCellExperiment(seur_obj2)
+sce$costum_clustering
+
+sce$Populations <- sce$costum_clustering
+
+cellLabels <- sce$Populations
+lako <- counts(sce)
+colnames(lako) <- cellLabels
+
+sce <- scater::runPCA(sce,ncomponent = 30)
+
+my_color<- palette(rainbow(7)) 
+names(my_color) <- unique(as.character(sce$Populations))
+
+pca_df <- data.frame(PC1 = reducedDim(sce,"PCA")[,1],
+                     PC2 = reducedDim(sce,"PCA")[,2],
+                     Populations = sce$Populations)
+pdf(paste0(resultsdir,'/plotpseudotime_PCs.pdf') ,width=5,height=5,paper='special') 
+ggplot(data = pca_df)+geom_point(mapping = aes(x = PC1, y = PC2, colour = Populations))+
+  scale_colour_manual(values = my_color)+theme_classic()
+
+sce$PC1 <- reducedDim(sce, "PCA")[,1]
+
+ggplot(pca_df, aes(x = PC1, y = Populations, 
+                              colour = Populations)) +
+    geom_quasirandom(groupOnX = FALSE) +
+    scale_colour_manual(values = my_color) + theme_classic() +
+    xlab("First principal component") + ylab("Timepoint") +
+    ggtitle("Cells ordered by first principal component")
+dev.off()
+sce2 <- slingshot(sce, clusterLabels = 'Populations',start.clus = "LPCs",reducedDim = "PCA",
+                      allow.breaks = FALSE)
+
+summary(sce2$slingPseudotime_1)
+
+#lnes <- getLineages(reducedDim(sce2,"PCA"),
+                    #sce2$Populations)
+#lnes@lineages
+
+# plot(reducedDims(sce2)$PCA, col = my_color[as.character(sce2$Populations)], 
+#      pch=16, 
+#      asp = 1)
+# legend("bottomleft",legend = names(my_color[levels(sce2$Populations)]),  
+#        fill = my_color[levels(sce2$Populations)])
+# lines(SlingshotDataSet(sce2), lwd=2, type = 'lineages', col = c("black"))
+
+slingshot_df <- data.frame(colData(sce))
+slingshot_df$slingPseudotime_1 <- sce2$slingPseudotime_1
+
+pdf(paste0(resultsdir,'/Slingshotpseudotime_1_2_LPCs.pdf') ,width=5,height=5,paper='special') 
+ggplot(slingshot_df, aes(x = slingPseudotime_1, y = Populations, 
+                              colour = Populations)) +
+    geom_quasirandom(groupOnX = FALSE) + theme_classic() +
+    xlab("First Slingshot pseudotime") + ylab("cell type") +
+    ggtitle("Cells ordered by Slingshot pseudotime")+scale_colour_manual(values = my_color)
+
+slingshot_df$slingPseudotime_2 <- sce2$slingPseudotime_2
+ggplot(slingshot_df, aes(x = slingPseudotime_2, y = Populations, 
+                              colour = Populations)) +
+    geom_quasirandom(groupOnX = FALSE) + theme_classic() +
+    xlab("Second Slingshot pseudotime") + ylab("cell type") +
+    ggtitle("Cells ordered by Slingshot pseudotime")+scale_colour_manual(values = my_color)
+dev.off()
+# Pseudotime without the unwanted cell clusters
+# seur_obj <- seur_obj[,(seur_obj$costum_clustering != "IC")&(seur_obj$costum_clustering != "FCECs")(seur_obj$costum_clustering != "IC")]
+# sce <- as.SingleCellExperiment(seur_obj)
+# sce$costum_clustering
+# 
+# sce$Populations <- sce$costum_clustering
+# 
+# cellLabels <- sce$Populations
+# lako <- counts(sce)
+# colnames(lako) <- cellLabels
+# 
+# sce <- scater::runPCA(sce,ncomponent = 10)
+# 
+# my_color<- palette(rainbow(11)) 
+# #set.seed(723451) # for reproducibility
+# #my_color <- createPalette(10, c("#010101", "#ff0000"), M=1000)
+# names(my_color) <- unique(as.character(sce$Populations))
+# 
+# 
+# sce3 <- sce[sce$Populations!="IC"]
+# sce2 <- slingshot(sce, clusterLabels = 'Populations',reducedDim = "PCA",
+#                       allow.breaks = FALSE)
+# 
+# summary(sce2$slingPseudotime_1)
+
+```
