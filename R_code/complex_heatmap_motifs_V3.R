@@ -1,17 +1,19 @@
-# COMPLEX HEATMAP OF MOTIFS AND RNA-seq
+###########################################################################
+# Workflow COMPLEX HEATMAP OF MOTIFS AND RNA-seq
+
 # Loading in important packages
 library(chorddiag)
 library(circlize)
 library(viridis)
 library(ggvenn)
-#install.packages('venn')
+#install.packages('venn') #run this the first time when initializing
 library(venn)
 library(dplyr)
 library(tidyr)
 library(tidyselect)
 library(ComplexHeatmap)
 
-# Setting up the directory
+# Setting up the working directory
 workdir <- "/ceph/rimlsfnwi/data/moldevbio/zhou/jarts/R/complexheatmap_motifs/"
 
 # Setting up results directory
@@ -23,31 +25,31 @@ system(paste("mkdir -p ", resultsdir))
 expected <- read.csv("/ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/ANANSE/Expected_tfs.csv",header = T, comment.char = '#')
 exgeneral <- read.csv("/ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/ANANSE/Expectedgeneral_tfs.csv",header = T, comment.char = '#')
 
-## load in the z-score normalized dataset:
+# Load in the Z-score normalized dataset of gene expression:
 lakorna <- read.table(file = '/ceph/rimlsfnwi/data/moldevbio/zhou/jarts/R/20210712/Zscoretable.tsv', sep = '\t', header = TRUE, row.names=1) #for all individual pops
 
-lakorna <- na.omit(lakorna)
-
-# for filtering
+# For filtering; the three clusters were not used in motif analysis, so excluded from gene expression
 lakorna <- lakorna[, !names(lakorna) %in% c("IC", "FCECs", "Ves")]
 
 # Setting the colors of the general transcription factors expected to be found
-neurexpected <- unlist(strsplit(exgeneral[exgeneral$cell_type == "neural",]$expected_tfs,","))
 eyeexpected <- unlist(strsplit(exgeneral[exgeneral$cell_type == "eye",]$expected_tfs,","))
 epiexpected <- unlist(strsplit(exgeneral[exgeneral$cell_type == "epidermal",]$expected_tfs,","))
 
 lakorna <- na.omit(lakorna)
 
-##############################
+###########################################################################
+# Load in the q-quantile normalized files of the motifs where one TF is associated with one motif
+
 lakoqnormmotifs <- read.table(file = "/ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/motif_analysis/quantile_sigregions/joined.txt",sep = ' ', header = TRUE, row.names=1)
 lakoqnormmotifs <- lakoqnormmotifs[,1:12]
 lakoqnormmotifs<- lakoqnormmotifs[, !colnames(lakoqnormmotifs) %in% c("IC", "FCECs", "Ves")]
+
+# Select only one motif for each gene
 selector <- unique(lakoqnormmotifs[c("genes")])
 names <- rownames(selector)
 y <- subset(lakoqnormmotifs, rownames(lakoqnormmotifs) %in% names)
-y$genes[y$genes == "TP73"] <- "TP63"
 
-# subselect overlapping genes in the two datasets
+# Subselect overlapping genes in the two datasets
 z <- subset(lakorna, rownames(lakorna) %in% (x$genes))
 z <- subset(lakorna, rownames(lakorna) %in% (y$genes))
 y <- subset(y, y$genes %in% rownames(z))
@@ -55,8 +57,12 @@ y <- subset(y, y$genes %in% rownames(z))
 rownames(y) <- y$genes
 y$genes <- NULL
 
+###########################################################################
+# Converting the dataframes to matrices for complex heatmap of all TFs
+
 matz <- as.matrix(z)
 maty <- as.matrix(y)
+
 # Selecting the top 10 factors of all populations
 vec2 <- NULL
 for (i in colnames(y)) {
@@ -68,41 +74,50 @@ vec2 <- c(vec2,vec)
 vec2 <- unique(vec2)
 
 z <- subset(z, rownames(z) %in% vec2)
-#x <- subset(x, rownames(x) %in% vec2)
 y <- subset(y, rownames(y) %in% vec2)
+
+###########################################################################
+# Converting the dataframes to matrices for complex heatmap of only the top 10 TFs
 
 matz <- as.matrix(z)
 maty <- as.matrix(y)
 
-# Making the complex heatmap
+# Setting color ramps for the two heatmaps
 f1 = colorRamp2(c(-3, 0, 3), c("blue", "#EEEEEE", "red"), space = "RGB")
-f2 = colorRamp2(c(-5, 0, 5), c("blue", "#EEEEEE", "green"), space = "RGB")
-f3 = colorRamp2(c(-5, 0, 5), c("blue", "#EEEEEE", "yellow"), space = "RGB")
+f2 = colorRamp2(c(-5, 0, 5), c("blue", "#EEEEEE", "yellow"), space = "RGB")
+
+
+###########################################################################
+# Making the complex heatmap of gene expression
 
 ht1 = Heatmap(matz, col = f1, cluster_columns = T,cluster_rows = T, name = "Z-score RNA count")
 
+# Order the rows based on heatmap clustering in both matrices
 roword <- row_order(ht1)
 matz <- matz[roword,]
 colord <- column_order(ht1)
 matz <- matz[, colord]
-
-#matx <- matx[rownames(matz),colnames(matz)]
-
 maty <- maty[rownames(matz),]
 
+# Setting up the vector that will give the names at the side of the heatmap
 vec2 <- rownames(matz)
 
-ht2 = Heatmap(maty, col = f3, cluster_columns = F,cluster_rows = F, name = "Z-score qnorm motifs ")
+###########################################################################
+# Making the complex heatmap of motifs
 
-# Plotting the heatmaps
+ht2 = Heatmap(maty, col = f2, cluster_columns = F,cluster_rows = F, name = "Z-score qnorm motifs ")
+
+
+###########################################################################
+# Plotting both heatmaps and colors if they are found in literature
+
 pdf(paste(resultsdir,'/complexheatmap_motifs.pdf',sep="/") ,width=15,height=8,paper='special')
+
+# Color annotation of the TFs
 vec3 <- which(rownames(maty) %in% vec2, arr.ind=TRUE)
-
 fontcolors <- rep('black', length(vec3))
-row_idx <- which(vec2 %in% neurexpected)
-fontcolors[row_idx] <- 'purple'
 
-# linking the celltype specific factors
+# Linking the celltype specific factors
 row_idx <- which(vec2 %in% eyeexpected)
 fontcolors[row_idx] <- 'red'
 
