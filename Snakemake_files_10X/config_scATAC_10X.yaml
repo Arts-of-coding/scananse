@@ -1,0 +1,6 @@
+name: config_scATAC_10X.yaml
+data: /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/
+cellrangerpath: /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/cellrangeratac/
+samples:
+- SRR1234
+- SRR1235

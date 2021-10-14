@@ -1,0 +1,6 @@
+name: config_scRNA_10X.yaml
+data: /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/
+cellrangerpath: /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/cellranger/
+samples:
+- SRR12386362
+- SRR12386363
