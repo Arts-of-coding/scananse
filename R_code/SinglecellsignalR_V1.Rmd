@@ -1,49 +1,57 @@
 ---
 title: "SinglecellsignalR_V1"
 author: "Julian"
-date: "8/30/2021"
+date: "10/14/2021"
 output: html_document
 ---
 
 ```{r}
+###########################################################################
+# SinglecellsignalR workflow
+
+# Setting up the working directory
 workdir <- "/ceph/rimlsfnwi/data/moldevbio/zhou/jarts/R/SinglecellsignalR/"
 
-## setting up results directory
+# Setting up results directory
 dateoftoday <- gsub("-","",as.character(Sys.Date()))
 resultsdir <- paste0(workdir, dateoftoday)
 system(paste("mkdir -p",resultsdir))
 
-#dataset_location <- "/ceph/rimlsfnwi/data/moldevbio/zhou/jarts/R/scRNA-seq/lakoRNAannotated_4cells.rds"
 dataset_location <- "/ceph/rimlsfnwi/data/moldevbio/zhou/jarts/R/scRNA-seq/lakoRNAannotated.rds"
-#dataset_location <- "~/ceph_snabel/scrna/CMdiff_mon-EB-EHT_combined/subsets/clust_umap_R/complete_integrated/20210426_ClusteringUMAP_toPy_noSubset/seusetv3_PC1-45_res1.5.rds"
-#workdir <- "~/ceph_snabel/scrna/CMdiff_mon-EB-EHT_combined/subsets/clust_umap_R/complete_integrated/"
 
-## loading repositories
+# Loading repositories; run the install lines when initializing the repository the first time
 library(Seurat)
 library(SingleCellSignalR)
 #install.packages("alluvial")
 library(alluvial)
 #install.packages("viridis")
 library(viridis)
+#BiocManager::install("org.Hs.eg.db")
+library(org.Hs.eg.db)
+#BiocManager::install("clusterProfiler")
+library(clusterProfiler)
 ```
-## Loading the dataset
+# Loading the dataset
 Normalized, scaled dataset with information on the highest variable genes (HVGs).
 ```{r}
 seusetall <- readRDS(paste0(dataset_location))
 ```
-#### Setting up results directory
+# Running singlecellsignalR
 ```{r}
-knitr::opts_knit$set(root.dir = normalizePath(resultsdir))
+###########################################################################
+# Pre-processing the annotated seurat dataset
 
-#data <- data.frame(seuset[['sf']]@data)
-
-# subselect cells
 seuset <- seusetall
 cluster = as.numeric(Idents(seuset))
 data = data.frame(seuset[["RNA"]]@data)
 all.genes <- rownames(seuset)
-# Ligand/Receptor analysis using SingleCellSignalR
+
+###########################################################################
+# Calculating all paracrine cell-cell interactions
 signalall = cell_signaling(data=data,genes=all.genes,cluster=cluster, c.names = unique(seuset$costum_clustering))
+
+###########################################################################
+# LNPC paracrine interactions
 
 pdf(paste(resultsdir,"/",'singlecellsignal_LNPCs.pdf',sep=""),width=8,height=10,paper='special') 
 grep("LNPCs-IC", names(signalall))
@@ -54,9 +62,10 @@ interactions <- c(grep("LNPCs-IC", names(signalall)),
                   grep("LNPCs-CjS", names(signalall)))
 
 visualize_interactions(signal = signalall, show.in = interactions, limit = 10)
-# 
-#mv <- mv_interactions(data, genes = row.names(data), cluster, n=top_int)
 dev.off()
+
+###########################################################################
+# Conversion to dataframe for alluvial plot
 
 extracted <- NULL
 extracted2 <- NULL
@@ -83,20 +92,24 @@ for (i in cells){
 ord <- list(NULL, with(extracted2, order(extracted2$receptorcell,extracted2$ligand), NULL))
 
 pdf(paste(resultsdir,"/",'alluvialligreceptor_LNPCs_paracine.pdf',sep=""),width=7,height=8,paper='special') 
-alluvial(extracted2[,1:2], freq = extracted2$LRscore,col=extracted2$col,border = NA,blocks = TRUE,ordering=ord)#,col=ifelse( df3$from == "PAX6" & df3$to == df3$to, "red", "gray") )#, freq=df3$from, border=NA)
+alluvial(extracted2[,1:2], freq = extracted2$LRscore,col=extracted2$col,border = NA,blocks = TRUE,ordering=ord)
 dev.off()
 
-#######################################
-# LNPCs autocrine
+###########################################################################
+# Calculating all autocrine interactions
+
 signalallauto = cell_signaling(data=data,genes=all.genes,cluster=cluster,int.type = "autocrine", c.names = unique(seuset$costum_clustering))
+
+###########################################################################
+# Autocrine LNPCs interactions with itself
 
 pdf(paste(resultsdir,"/",'singlecellsignal_LNPCsauto.pdf',sep=""),width=8,height=10,paper='special') 
 interactions <- c(grep("LNPCs-LNPCs", names(signalallauto)))
-
 visualize_interactions(signal = signalallauto, show.in = interactions, limit = 10)
-# 
-#mv <- mv_interactions(data, genes = row.names(data), cluster, n=top_int)
 dev.off()
+
+###########################################################################
+# Conversion to dataframe for alluvial plot
 
 extracted <- NULL
 extracted2 <- NULL
@@ -120,20 +133,18 @@ for (i in cells){
   extracted2$col[extracted2$receptorcell == i]<-dfcol[rownames(dfcol) == i,]
 }
 
+# Re-order the recepors
 vecnfkb <- c("TLR1","TNFRSF1A","TNFRSF10B","TNFRSF21","TNFRSF10A","TNFRSF12A","IL1R1","AGTR1")
 
 extracted3 <- extracted2[extracted2$receptor%in%vecnfkb,]
 ord <- list(NULL, with(extracted3, order(extracted3$receptorcell,extracted3$ligand), NULL))
 
 pdf(paste(resultsdir,"/",'alluvialligreceptor_LNPCs_autocrine_NFKB.pdf',sep=""),width=7,height=8,paper='special') 
-alluvial(extracted3[,1:2], freq = extracted3$LRscore,col=extracted3$col,border = NA,blocks = TRUE,ordering=ord)#,col=ifelse( df3$from == "PAX6" & df3$to == df3$to, "red", "gray") )#, freq=df3$from, border=NA)
+alluvial(extracted3[,1:2], freq = extracted3$LRscore,col=extracted3$col,border = NA,blocks = TRUE,ordering=ord)
 dev.off()
 
-# Save a list from the receptors for GO term enrichment
-#BiocManager::install("org.Hs.eg.db")
-library(org.Hs.eg.db)
-#BiocManager::install("clusterProfiler")
-library(clusterProfiler)# this one does not work correctly
+###########################################################################
+# Go-term enrichment of ligands
 
 cluster_genes <- extracted2$ligand
 PC1_ego <- enrichGO(gene = cluster_genes,
@@ -149,11 +160,13 @@ PC1_ego <- enrichGO(gene = cluster_genes,
   }else{
     go_plot1 <- barplot(PC1_ego, showCategory=100)
   }
+
 pdf(paste(resultsdir,"/",'alluvialligreceptor_LNPCs_autocrine_GO.pdf',sep=""),width=14,height=50,paper='special') 
 go_plot1
 dev.off()
-######################################
-# Paracine IC interactions
+
+###########################################################################
+# Paracrine IC interactions
 pdf(paste(resultsdir,"/",'singlecellsignal_IC.pdf',sep=""),width=8,height=10,paper='special') 
 #grep("LNPCs-IC", names(signalall))
 interactions <- c(grep("IC-LPCs", names(signalall)), 
@@ -161,9 +174,10 @@ interactions <- c(grep("IC-LPCs", names(signalall)),
                            grep("IC-CSSCs", names(signalall)))
 
 visualize_interactions(signal = signalall, show.in = interactions, limit = 10)
-# 
-#mv <- mv_interactions(data, genes = row.names(data), cluster, n=top_int)
 dev.off()
+
+###########################################################################
+# Conversion to dataframe for alluvial plot
 
 extracted <- NULL
 extracted2 <- NULL
@@ -190,21 +204,22 @@ for (i in cells){
 ord <- list(NULL, with(extracted2, order(extracted2$receptorcell,extracted2$ligand), NULL))
 
 pdf(paste(resultsdir,"/",'alluvialligreceptor_IC_paracine.pdf',sep=""),width=7,height=8,paper='special') 
-alluvial(extracted2[,1:2], freq = extracted2$LRscore,col=extracted2$col,border = NA,blocks = TRUE,ordering=ord)#,col=ifelse( df3$from == "PAX6" & df3$to == df3$to, "red", "gray") )#, freq=df3$from, border=NA)
+alluvial(extracted2[,1:2], freq = extracted2$LRscore,col=extracted2$col,border = NA,blocks = TRUE,ordering=ord)
 dev.off()
 
-######################################3
-# Paracine IC interactions
+###########################################################################
+# Paracrine LPCs interactions
+
 pdf(paste(resultsdir,"/",'singlecellsignal_LPCs.pdf',sep=""),width=8,height=10,paper='special') 
-#grep("LNPCs-IC", names(signalall))
 interactions <- c(grep("LPCs-IC", names(signalall)), 
                   grep("LPCs-StC", names(signalall)),
                            grep("LPCs-CSSCs", names(signalall)))
 
 visualize_interactions(signal = signalall, show.in = interactions, limit = 10)
-# 
-#mv <- mv_interactions(data, genes = row.names(data), cluster, n=top_int)
 dev.off()
+
+###########################################################################
+# Conversion to dataframe for alluvial plot
 
 extracted <- NULL
 extracted2 <- NULL
@@ -231,12 +246,11 @@ for (i in cells){
 ord <- list(NULL, with(extracted2, order(extracted2$receptorcell,extracted2$ligand), NULL))
 
 pdf(paste(resultsdir,"/",'alluvialligreceptor_LPCs_paracine.pdf',sep=""),width=7,height=8,paper='special') 
-alluvial(extracted2[,1:2], freq = extracted2$LRscore,col=extracted2$col,border = NA,blocks = TRUE,ordering=ord)#,col=ifelse( df3$from == "PAX6" & df3$to == df3$to, "red", "gray") )#, freq=df3$from, border=NA)
+alluvial(extracted2[,1:2], freq = extracted2$LRscore,col=extracted2$col,border = NA,blocks = TRUE,ordering=ord)
 dev.off()
 
 ######################################
 pdf(paste(resultsdir,"/",'singlecellsignal_toLPCs.pdf',sep=""),width=8,height=10,paper='special') 
-#grep("LNPCs-IC", names(signalall))
 interactions <- c(grep("CjS_LPCs", names(signalall)), 
                   grep("LNPCs-LPCs", names(signalall)),
                            grep("CSB-LPCs", names(signalall)), 
@@ -244,9 +258,10 @@ interactions <- c(grep("CjS_LPCs", names(signalall)),
                   grep("IC-LPCs", names(signalall)))
 
 visualize_interactions(signal = signalall, show.in = interactions, limit = 10)
-# 
-#mv <- mv_interactions(data, genes = row.names(data), cluster, n=top_int)
 dev.off()
+
+###########################################################################
+# Conversion to dataframe for alluvial plot
 
 extracted <- NULL
 extracted2 <- NULL
@@ -273,78 +288,6 @@ for (i in cells){
 ord <- list(NULL, with(extracted2, order(extracted2$donorcell,extracted2$ligand), NULL))
 
 pdf(paste(resultsdir,"/",'alluvialligreceptor_ToLPCs_paracine.pdf',sep=""),width=7,height=8,paper='special') 
-alluvial(extracted2[,1:2], freq = extracted2$LRscore,col=extracted2$col,border = NA,blocks = TRUE,ordering=ord)#,col=ifelse( df3$from == "PAX6" & df3$to == df3$to, "red", "gray") )#, freq=df3$from, border=NA)
+alluvial(extracted2[,1:2], freq = extracted2$LRscore,col=extracted2$col,border = NA,blocks = TRUE,ordering=ord)
 dev.off()
-
-
-
-
-
-
-###############################
-# DELETE BELOW?
-
-df <- c()
-# subselect cells
-seuset <-subset(x=seusetall, subset = (costum_clustering == "LNPCs"|costum_clustering == "CB"|costum_clustering == "MEC"))#|costum_clustering == "CjS")) #costum_clustering == "LPCs"|
-cluster = as.numeric(Idents(seuset))
-data = data.frame(seuset[["RNA"]]@data)
-all.genes <- rownames(seuset)
-# Ligand/Receptor analysis using SingleCellSignalR
-signal = cell_signaling(data=data,genes=all.genes,cluster=cluster, c.names = unique(seuset$costum_clustering))
-
-seuset <-subset(x=seusetall, subset = (costum_clustering == "LPCs"|costum_clustering == "CB"|costum_clustering == "CSB"|costum_clustering == "CjS")) #costum_clustering == "LPCs"|
-cluster = as.numeric(Idents(seuset))
-data = data.frame(seuset[["RNA"]]@data)
-all.genes <- rownames(seuset)
-# Ligand/Receptor analysis using SingleCellSignalR
-signal2 = cell_signaling(data=data,genes=all.genes,cluster=cluster, c.names = unique(seuset$costum_clustering))
-
-seuset <-subset(x=seusetall, subset = (costum_clustering == "LPCs"|costum_clustering == "LNPCs"|costum_clustering == "MEC")) #costum_clustering == "LPCs"|
-cluster = as.numeric(Idents(seuset))
-data = data.frame(seuset[["RNA"]]@data)
-all.genes <- rownames(seuset)
-# Ligand/Receptor analysis using SingleCellSignalR
-signal3 = cell_signaling(data=data,genes=all.genes,cluster=cluster, c.names = unique(seuset$costum_clustering))
-
-
-
-# Visualization of IC-LPCs
-visualize_interactions(signal)#,show.in = c(64))
-
-# Ligands
-signaltest<-signal[["IC-LPCs"]]
-bla <- signaltest$`9`
-
-inter.net <- inter_network(data = data, signal = signal, genes = genes, cluster = c("cluster 10", "cluster 11"), write = FALSE)
-
-intra = intra_network(bla,data,all.genes,cluster,"cluster 6",signal = signal)
-
-# Receptors
-#signaltest<-signal[["IC-LPCs"]]
-#bla <- signaltest$`6`
-#intra = intra_network(bla,data,all.genes,cluster,"cluster 9",signal = signal)
-
-# data <- data.frame(seuset@active.ident)
-# clust.ana <- cluster_analysis(data = data, genes = row.names(data), cluster = clusters, c.names = unique( clusters), write = FALSE)
-# signal <- cell_signaling(data=data,genes=row.names(data),cluster=clusters, species = "homo sapiens", c.names = unique( clusters), verbose = FALSE)
-# inter.net <- inter_network(data = data, signal = signal, genes = row.names(data), cluster = clusters, write = FALSE)
-# 
-# DimPlot(seuset, group.by = "seurat_clusters", label = TRUE)
-# 
-# grep("cluster 22", names(signal))
-# Fibrobl_interactions <- c(grep("cluster 22-cluster 7", names(signal)), 
-#                           grep("cluster 22-cluster 25", names(signal)),
-#                           grep("cluster 22-cluster 23", names(signal)), 
-#                           grep("cluster 22-cluster 6", names(signal)))
-# visualize_interactions(signal = signal, show.in = Fibrobl_interactions, limit = 10)
-# 
-# top_int = 10
-# pdf(paste0("SignalR_Heatmap_top", top_int, ".pdf"), width = 30, height = 10)
-# mv <- mv_interactions(data, genes = row.names(data), clusters, n=top_int)
-# dev.off()
-# 
-# sessionInfo()
-# 
-# knitr::opts_chunk$set(echo = TRUE)
 ```
