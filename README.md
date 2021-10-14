@@ -151,7 +151,7 @@ macs2 callpeak -t $bam --name $bam --nomodel --shift 100 --ext 200 --qval 5e-2 -
 done
 ```
 
-# Making bigwig tracks (see R file)
+# Making bigwig tracks from bdg files
 It is possible to also make bigwig tracks from the output of MACS2. Excluding nonsense chromosomes which give errors when compared to the reference genome file.
 ```console
 grep -Ev 'GL000|KI|chrM' $bdg_file > $ bdg_file2
@@ -186,7 +186,7 @@ StC_ATAC_peaks  /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/split_ba
 LiCo_ATAC_BAM   /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/split_bam_4cells/4cells/outs/subsets/LiCo.bam   ATAC_BAM        LiCo
 StCSC_ATAC_BAM  /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/split_bam_4cells/4cells/outs/subsets/StCSC.bam  ATAC_BAM        StCSC
 ```
-If you want to calculate the significant peaks (for Gimme Maelstrom analysis), then you also need to specify replicate files as well in the files.tsv.
+If you want to calculate the significant peaks (for Gimme Maelstrom analysis), then you also need to specify replicate files as well in the files.tsv. The replicates were generated within "Workflow_snapATAC_integration_V5.R".
 ```console
 $ tail files.tsv
 ## ATACseq BAM replicate files
@@ -194,9 +194,10 @@ CSB_ATAC_BAM    /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/split_ba
 CSB_ATAC_BAM    /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/split_bam_repex/reps/outs/subsets/CSB2.bam      ATAC_BAM        CSBrep2 CSBrep2
 CSB_ATAC_BAM    /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/data/lako2021/split_bam_repex/reps/outs/subsets/CSB3.bam      ATAC_BAM        CSBrep3 CSBrep3
 ```
-To determine motif analysis on significant peaks, run the Python script ...Combine_peaks_V2.ipynb... with measured replicates. Next, run the R script ...significance_calc_peaks_gimme.R... for determining the significant peaks.
 
-The joined coverage table file can be quantile normalized and subselected for significant regions with the Python script ...TPM_Quantile_script... . This file can be used as input for Gimme Mealstrom.
+To determine motif analysis on significant peaks, run the Python script "Combine_peaks_V2.ipynb" with measured replicates. Next, run the R script "significance_calc_peaks_gimme.R" for determining the significant peaks.
+
+The joined coverage table file can be quantile normalized and subselected for significant regions with the Python script "TPM_Quantile_script_V3" . This file can be used as input for Gimme Mealstrom.
 ```console
 $ head quantilepeaks.txt
 loc	Ves	StC	MEC	LPCs	LNPCs	IC	FCECs	CjS	CSSCs	CSB	CB
@@ -210,14 +211,13 @@ $ gimme maelstrom quantilepeaks.txt /ceph/rimlsfnwi/data/moldevbio/zhou/jarts/da
 ```
 
 # Combined analysis of motifs and gene expression
-You can determine which transcription factors binding to your motifs are also expressed in your single cell populations. Run the R script .... to generate heatmaps with gene expression and quantile normalization.
+You can determine which transcription factors binding to your motifs are also expressed in your single cell populations. Run the R script "complex_heatmap_motifs_V3.R" to generate heatmaps with gene expression and quantile normalization.
 
 # Generating the nessesary files for ANANSE and running ANANSE.
-
-Lastly, ananse can be run with the python script .... . The files can be further analysed with the R script .... .
+Lastly, ananse can be run with the python script "Run_ananse_V4_JA.ipynb" . The files can be further analysed with the R script "ANANSE_analysis_V4.R" .
 
 # Notes
-Note for setting the correct paths in Cellranger:
+Note for setting the correct paths in Cellranger within the terminal:
 ```console
 export PATH=/ceph/rimlsfnwi/data/moldevbio/zhou/jarts/cellranger/cellranger-6.0.1:$PATH
 ```
