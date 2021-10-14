@@ -21,7 +21,7 @@ Run the executable miniconda script.
 $ ./Miniconda3-latest-Linux-x86_64.sh
 ```
 
-# Installing the right environments for downstream analysis in Miniconda.
+# Installing the right channels for downstream analysis in Miniconda.
 Install the nessesary channels if Bioconda has not been used before. 
 ```console
 $ conda config --add channels defaults
